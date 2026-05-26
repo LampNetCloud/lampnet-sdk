@@ -1,0 +1,26 @@
+# Credentials — KHÔNG BAO GIỜ commit
+.env
+.env.*
+!.env.template
+*.key
+*.pem
+*.pat
+secrets/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Build
+target/
+node_modules/
+dist/
+build/
+*.log
