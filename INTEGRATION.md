@@ -12,7 +12,7 @@ Những phần ghi **"đang làm"** chưa có trong mã đang phát hành; đừ
 |---|---|---|
 | **HTTP API của node** | Tải lên, tải xuống, xoá, tra cứu tài liệu; gửi yêu cầu kết nạp thiết bị; các vòng góp tài nguyên | Server của app hoặc trực tiếp từ client |
 | **SDK di động `lampnet-mobile-sdk`** (UniFFI, Kotlin/Swift) | Sinh khoá thiết bị, đo cấu hình máy, dựng yêu cầu kết nạp đã ký, ký các yêu cầu góp tài nguyên, niêm và mở dữ liệu phía client | Trong app Android/iOS |
-| **Các crate Rust phía client** | App viết bằng Rust, hoặc gateway cần tự niêm dữ liệu (`lampnet-moc`) hay tự kiểm vé PhoenixKey (`lampnet-phoenixkey-verify`) | Tiến trình của app |
+| **Thư viện Rust phía client** (cấp theo yêu cầu) | App hoặc gateway viết bằng Rust cần tự niêm dữ liệu; liên hệ đội LampNet để được cấp quyền | Tiến trình của app |
 
 Nguyên tắc chung: **SDK không gọi mạng**. Các hàm SDK chỉ tính toán và ký; app tự gửi kết quả lên HTTP API. Nhờ vậy app giữ toàn quyền về lớp mạng (proxy, thử lại, timeout).
 
@@ -144,7 +144,7 @@ Node còn các route phục vụ vận hành và liên lạc giữa các node. C
 
 Header: `Authorization: Bearer <token>`.
 
-Token phải là **`app_token` PhoenixKey** dạng JWS. Node kiểm bằng crate `lampnet-phoenixkey-verify`:
+Token phải là **`app_token` PhoenixKey** dạng JWS. Node kiểm vé theo các điều kiện sau:
 
 - Thuật toán chỉ `EdDSA`; `HS*`, `RS*`, `none` bị từ chối. Header phải có `kid`; `typ` nếu có phải là `JWT` hoặc `at+jwt`.
 - `exp` bắt buộc; `iat` không được ở tương lai quá độ lệch giờ cho phép (60 giây).
@@ -153,7 +153,7 @@ Token phải là **`app_token` PhoenixKey** dạng JWS. Node kiểm bằng crate
 - Ghi bắt buộc có `jti`.
 - Chủ sở hữu của object (`owner_did`) lấy từ `sub` đã kiểm, không lấy từ trường do client tự khai.
 
-App gửi kèm bộ header buộc vé vào thân request: `X-LN-Body-Hash` (BLAKE3 hex), `X-LN-Nonce`, `X-LN-Ts` (cửa sổ 120 giây), `X-LN-PoP`.
+App gửi kèm bộ header buộc vé vào thân request: `X-LN-Body-Hash` (BLAKE3 của thân, hex chữ thường), `X-LN-Nonce`, `X-LN-Ts` (giây Unix, cửa sổ 120 giây). Khi vé PhoenixKey mang khoá chứng minh sở hữu (trường `cnf`), app gửi thêm `X-LN-PoP`; định dạng của header này được công bố cùng phiên bản vé đó.
 
 Mã lỗi: `401 MISSING_AUTH` / `NOT_BEARER` · `403 INVALID_TOKEN` · `503` khi node không lấy được bộ khoá công khai của PhoenixKey.
 ### 3.2 Chữ ký DID (khoá P-256)
@@ -169,7 +169,7 @@ Dùng cho `/v1/session/open`, tải xuống object có chủ, và xoá. Bốn he
 
 Cách dựng chữ ký:
 
-1. **Query chuẩn hoá**: tách theo `&`, mỗi cặp tách ở dấu `=` đầu tiên, giải mã percent cả khoá lẫn giá trị. Khoá trùng → bị từ chối. Sắp các cặp theo `(khoá, giá trị)`, mã hoá lại `&`, `=`, `%` và byte điều khiển thành `%XX` (chữ hoa), rồi nối `khoá=giá_trị` bằng `&`. Không có query thì là chuỗi rỗng.
+1. **Query chuẩn hoá**: tách theo `&`, mỗi cặp tách ở dấu `=` đầu tiên, giải mã percent cả khoá lẫn giá trị. Đoạn rỗng (ví dụ `a=1&&b=2`) bị bỏ qua; đoạn không có `=` có giá trị rỗng; khoá trùng hoặc byte không phải UTF-8 sau khi giải mã → bị từ chối. Sắp các cặp theo `(khoá, giá trị)`, mã hoá lại `&`, `=`, `%` và byte điều khiển thành `%XX` (chữ hoa), rồi nối `khoá=giá_trị` bằng `&`. Không có query thì là chuỗi rỗng.
 2. **Challenge** (32 byte) = BLAKE3 của chuỗi byte: với lần lượt `LAMPNET_MIRAGE_CHALLENGE_v1`, phương thức HTTP viết hoa, đường dẫn, query chuẩn hoá, BLAKE3 của thân (32 byte; thân rỗng thì là BLAKE3 của chuỗi rỗng), nonce — mỗi phần đứng sau độ dài của nó dạng u32 little-endian.
 3. **Thông điệp ký** = `<challenge dạng hex>:LAMPNET_MIRAGE_CLIENT_AUTH_v1:<ts>`, với `ts` trùng giá trị header `x-lampnet-did-ts`. Độ lệch giờ tối đa 60 giây.
 4. Ký thông điệp bằng ECDSA P-256 với SHA-256, xuất chữ ký dạng DER rồi hex.
@@ -206,10 +206,10 @@ Không có trường `privacy`: có gửi `password` thì object là `Private`, 
 
 ### 4.3 Niêm phía client
 
-Hướng tích hợp là **client tự niêm** dữ liệu trước khi gửi, bằng crate `lampnet-moc` hoặc các hàm `moc_*` của SDK di động (mục 5.3). Khoá nội dung sinh và giữ ở client; muốn chia sẻ thì bọc khoá cho khoá công khai của người nhận (`moc_wrap_key`). Gateway không giữ khoá chủ để dẫn khoá cho người dùng.
+Hướng tích hợp là **client tự niêm** dữ liệu trước khi gửi, bằng các hàm `moc_*` của SDK di động (mục 5.3), hoặc thư viện Rust tương đương do đội LampNet cấp. Khoá nội dung sinh và giữ ở client; muốn chia sẻ thì bọc khoá cho khoá công khai của người nhận (`moc_wrap_key`). Gateway không giữ khoá chủ để dẫn khoá cho người dùng.
 
 **Đang làm:**
-- Node tiếp nhận object đã niêm theo định dạng MOC. Hiện node chưa dùng `lampnet-moc`, nên CID do `moc_cid` tính **không trùng** CID node trả về. App phải dùng CID node trả để tải xuống.
+- Node tiếp nhận object đã niêm theo định dạng MOC. Hiện node chưa tính CID theo định dạng MOC, nên CID do `moc_cid` tính **không trùng** CID node trả về. App phải dùng CID node trả để tải xuống.
 - Quyền đọc theo cấp riêng tư (scope `lampnet.read` cho object riêng ở đường tải xuống).
 
 ---
