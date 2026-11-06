@@ -41,9 +41,9 @@ Xác thực: **Bearer** (mục 3.1). Thân `multipart/form-data`:
 
 Tham số `?mode=` được bỏ qua: mọi object mới ghi theo chế độ đối xứng.
 
-Mặc định node trả CID dạng văn bản thuần. `?format=json` trả JSON, gồm `cid`, `size_bytes`, `k`, `n`, `shards_placed_local`, `shards_scheduled_remote`, `shards_confirmed_remote`, `distribution_status`, `distribution_pending_peers`. `shards_scheduled_remote` là kế hoạch, không phải xác nhận.
+Mặc định node trả CID dạng văn bản thuần. `?format=json` trả JSON; `cid`, `size_bytes`, `k`, `n` luôn có. Các trường `shards_placed_local`, `shards_scheduled_remote`, `shards_confirmed_remote`, `distribution_status`, `distribution_pending_peers`, `distribution_mode`, `distribution_note` có thể vắng: tải lại object đã có thì không có `shards_confirmed_remote`, và không còn peer chờ thì không có `distribution_pending_peers`. `shards_scheduled_remote` là kế hoạch, không phải xác nhận.
 
-Mã lỗi chính: `400` (thiếu file, file rỗng, cấp riêng tư sai, thiếu mật khẩu), `401`/`403` (xác thực), `413` (lỗi đọc thân tải lên, gồm cả vượt trần), `503` (không lấy được khoá kiểm vé PhoenixKey).
+Mã lỗi chính: `400` (thiếu file, file rỗng, cấp riêng tư sai, thiếu mật khẩu), `401`/`403` (xác thực), `413` (lỗi đọc thân tải lên, gồm cả vượt trần), `503` (node tạm không kiểm được vé PhoenixKey).
 
 ### 2.3 Phiên tải lên (file lớn, tải tiếp được)
 
@@ -76,13 +76,13 @@ Node phục vụ tệp tĩnh trước; đường dẫn không khớp tệp tĩnh
 - Object có chủ cấp khác, hoặc bản ghi thiếu cấp: phải chứng minh DID của chủ (mục 3.2). Không gửi chứng minh → `404`, cùng mã với CID không tồn tại. Chữ ký DID sai → `401`. Node không đọc được sổ chủ → `503`.
 - Object không có chủ (`legacy:unowned`): ai có CID đều tải được.
 - CID sai định dạng → `404`. Vượt giới hạn tần suất → `429` kèm `Retry-After`.
-- Object do node niêm (tải lên kèm `password`): node trả bản đã niêm. SDK di động không có hàm mở bản này, định dạng phong bì không được đặc tả, và `moc_open` không đọc được. App cần đọc lại trên điện thoại thì tự niêm bằng `moc_*` (mục 4.3) trước khi tải lên.
+- Object do node niêm (cấp `private` hoặc `shielded`, tải lên kèm `password`): node trả bản đã niêm. Cấp `public` kèm `password` thì node bỏ qua mật khẩu và lưu bản rõ, không báo lỗi. SDK di động không có hàm mở bản này, định dạng phong bì không được đặc tả, và `moc_open` không đọc được. App cần đọc lại trên điện thoại thì tự niêm bằng `moc_*` (mục 4.3) trước khi tải lên.
 
 Quyền đọc theo cấp riêng tư đã chạy ở node. Scope `lampnet.read` chưa được kiểm ở đường đọc.
 
 ### 2.5 Xoá — `DELETE /v1/delete/:cid`
 
-Chỉ chủ sở hữu (chứng minh bằng chữ ký DID) được xoá. Object không có bản ghi chủ, hoặc là `legacy:unowned`, thì **bị từ chối** (fail-closed), trả `404`. Mã lỗi: `400`, `401` (thiếu hoặc sai xác thực), `404`, `503` (object đang bận, thử lại), `500`.
+Chỉ chủ sở hữu (chứng minh bằng chữ ký DID) được xoá. Object không có bản ghi chủ, hoặc là `legacy:unowned`, thì **bị từ chối** (fail-closed), trả `404`. Chữ ký DID hợp lệ nhưng không phải chủ cũng nhận `404`, cùng mã với CID không tồn tại. Mã lỗi: `400` CID sai định dạng · `401` thiếu hoặc sai xác thực · `404` · `429` quá giới hạn tần suất · `503` object đang bận hoặc node tạm không kiểm được DID, thử lại · `500`.
 
 ### 2.6 Tra cứu công khai
 
@@ -103,7 +103,7 @@ Lưu ý: `/v1/state` báo số peer mà **một** node thấy, không phải c�
 
 | Route | Phương thức | Xác thực | Việc làm |
 |---|---|---|---|
-| `/v1/join/challenge` | GET | không | Lấy `{nonce_hex, ttl_slot, issued_at_slot, verifier_did}`. `503` = node tạm không nhận yêu cầu kết nạp; thử lại sau (phản hồi này không kèm `Retry-After`). Từ bản `d0cee4d` thân có thêm `attest_ext`; bản `71701aa` đang chạy chưa trả, coi như mảng rỗng. |
+| `/v1/join/challenge` | GET | không | Lấy `{nonce_hex, ttl_slot, issued_at_slot, verifier_did}`. `503` = node tạm không nhận yêu cầu kết nạp; thử lại sau (phản hồi này không kèm `Retry-After`). Thân có thể có thêm `attest_ext`; node chưa trả trường này thì coi như mảng rỗng. |
 | `/v1/join/v2/request` | POST | Chữ ký khoá thiết bị nằm trong thân | Gửi nguyên văn `request_json` do SDK dựng. Lần đầu trả `{decision, score, initial_rep, tier, phase}`. Thiết bị đã là thành viên trả `{registered, tier, phase, decision}`, không có `score` và `initial_rep`. |
 | `/v1/join/status/:device_pubkey_hex` | GET | Header ký (mục 3.3) | Trả `{registered, tier, phase}`. |
 | `/v1/device/register` | POST | Chữ ký trong thân **và** 4 header DID (mục 3.2) | Gắn khoá thiết bị vào DID. |
@@ -115,7 +115,7 @@ Lỗi của `/v1/join/v2/request` là JSON `{"error": <mã>, "detail": …, "ret
 | 400 | `malformed_json`, `invalid_subject_did`, `invalid_cardano_address`, `did_mismatch` |
 | 401 | `bad_challenge`, `did_proof_rejected` |
 | 409 | `duplicate_fingerprint`, `did_bound_to_other_key`, `key_bound_to_other_did`, `did_key_cap_exceeded` |
-| 422 | `field_too_long`, `bad_attestation`; từ bản `d0cee4d` thêm `invalid_hw_gpus` |
+| 422 | `field_too_long`, `bad_attestation`, `invalid_hw_gpus` (node cũ chưa trả mã này) |
 | 500 | `member_state_missing` |
 | 429, 503 | Node tạm không nhận; thử lại sau, theo `retry_after_secs` hoặc `Retry-After` nếu có. `429` từ giới hạn theo IP là văn bản thuần, kèm `Retry-After`, không có thân JSON |
 
@@ -138,9 +138,9 @@ Các route `POST` dưới đây đòi chữ ký khoá thiết bị trong thân; 
 | `/v1/mobile/storage/proof` | POST | Nộp lời đáp kiểm chứng | `answer_storage_audit` |
 | `/v1/mobile/rewards/:device_pubkey` | GET | Xem công tích luỹ: `{device_pubkey_hex, units, storage_units, nanothread}`. Khoá chưa có công, kể cả khoá lạ, trả các số `0` | — |
 
-`/v1/mobile/storage/offer` đòi khoá thiết bị đã gắn DID, không thì `403 device_not_bound`. `/v1/mobile/lease` cũng trả `403 device_not_bound` khi node có bộ phân giải theo từng DID và khoá chưa gắn. SDK không gửi bằng chứng DID khi kết nạp, nên phải gọi `/v1/device/register` trước. Trên production, route trả `503` khi nút chưa bật tính năng góp ổ, và `503 no_shard_available` khi chưa có mảnh phù hợp.
+`/v1/mobile/storage/offer` đòi khoá thiết bị đã gắn DID, không thì `403 device_not_bound`. `/v1/mobile/lease` cũng trả `403 device_not_bound` khi node có bộ phân giải theo từng DID và khoá chưa gắn. SDK không gửi bằng chứng DID khi kết nạp, nên phải gọi `/v1/device/register` trước. Trên production, khi nút chưa bật tính năng góp ổ, cả bốn route `/v1/mobile/storage/offer`, `/shard`, `/challenge`, `/proof` đều trả `503`. Ở mọi môi trường, `/v1/mobile/storage/offer` trả `503 no_shard_available` khi nút chưa có mảnh vừa với `requested_bytes`; thử lại sau hoặc đổi nút.
 
-Mã lỗi chung của nhóm lưu trữ: `400` thân hoặc chữ ký sai định dạng · `403` chữ ký không khớp hoặc thiết bị không khớp · `404` lease không tồn tại · `409` trạng thái không hợp lệ (hết hạn, câu hỏi không khớp, hết lượt) · `429` kiểm chứng quá sớm · `500` lỗi phía node.
+Mã lỗi chung của nhóm lưu trữ: `400` thân hoặc chữ ký sai định dạng, hoặc dung lượng khai không hợp lệ · `403` chữ ký không khớp, thiết bị không khớp, hoặc `device_not_bound` · `404` lease không tồn tại · `409` trạng thái không hợp lệ (hết hạn, câu hỏi không khớp, hết lượt) hoặc bằng chứng không khớp · `429` kiểm chứng quá sớm, hoặc khoá đã giữ đủ số lease đang mở · `500` lỗi phía node · `503` xem đoạn trên, hoặc node hết chỗ cấp lease.
 
 ### 2.9 Route KHÔNG dành cho app
 
@@ -154,19 +154,19 @@ Node còn các route phục vụ vận hành và liên lạc giữa các node. C
 
 Header: `Authorization: Bearer <token>`.
 
-Khi node bật cổng PhoenixKey, token là **`app_token` PhoenixKey** dạng JWS. Cổng tắt mặc định; khi tắt, `app_token` bị từ chối với `403 Invalid token`. Bản `71701aa` đang chạy trên prod trả đúng phản hồi này. Khi cổng tắt, đường Bearer chỉ nhận thẻ dùng chung do đội vận hành cấp; liên hệ đội LampNet. Dưới đây là các điều kiện kiểm khi cổng bật:
+Khi node bật cổng PhoenixKey, token là **`app_token` PhoenixKey** dạng JWS. Cổng tắt mặc định; khi tắt, `app_token` bị từ chối với `403 Invalid token`. Khi cổng tắt, đường Bearer chỉ nhận thẻ dùng chung của node. Dưới đây là các điều kiện kiểm khi cổng bật:
 
 - Thuật toán chỉ `EdDSA`; `HS*`, `RS*`, `none` bị từ chối. Header phải có `kid`; `typ` nếu có phải là `JWT` hoặc `at+jwt`.
-- `exp` bắt buộc; `iat` không được ở tương lai quá độ lệch giờ cho phép (60 giây).
+- `exp` bắt buộc; `iat` không được ở tương lai quá độ lệch giờ cho phép (mặc định 60 giây).
 - `iss` phải khớp issuer đã cấu hình; `aud` phải chứa ServiceDID của LampNet.
 - Ghi cần scope `lampnet.write`; token không có scope bị từ chối khi ghi. Scope `lampnet.read` chưa được kiểm.
 - Ghi bắt buộc có `jti`.
 - Xác thực Bearer **không** tạo chủ sở hữu. Object chỉ có chủ khi yêu cầu mang chữ ký DID hợp lệ (mục 3.2): `/mirage/put` kèm 4 header DID, ký trên BLAKE3 của byte trường `file`; hoặc tải qua `/v1/session/open`. Thiếu DID thì object là `legacy:unowned`: ai có CID đều đọc được và không xoá được.
-- Ở `/mirage/put`, node chưa cấu hình bộ phân giải DID thì bỏ qua 4 header DID và rơi về Bearer. Nút không bật chế độ chặt vẫn nhận tải lên, và object thành `legacy:unowned`, không báo lỗi. Nút bật chế độ chặt thì thiếu header trả `400`. Header có mà sai luôn bị từ chối. Sau khi tải object không công khai, gọi `GET /<cid>` không kèm chứng minh để kiểm: object có chủ phải trả `404`.
+- Ở `/mirage/put`, node chưa cấu hình bộ phân giải DID thì không kiểm 4 header DID, kể cả khi chữ ký sai. Nút không bật chế độ chặt vẫn nhận tải lên và object thành `legacy:unowned`, không báo lỗi; nút bật chế độ chặt trả `400`, kể cả khi có đủ header. Node đã cấu hình bộ phân giải: thiếu `x-lampnet-did` thì nút chặt trả `400`, nút không chặt ghi `legacy:unowned`; có `x-lampnet-did` mà header còn lại thiếu hoặc sai thì bị từ chối, thường là `401`. Sau khi tải object không công khai, gọi `GET /<cid>` không kèm chứng minh để kiểm: object có chủ phải trả `404`.
 
-Node hiện không kiểm `X-LN-Body-Hash`, `X-LN-Nonce`, `X-LN-Ts`, `X-LN-PoP` ở đường này: chính sách triển khai bắt buộc `LAMPNET_AUTH_POP_POLICY=off`. Vé bị lộ có thể dùng lại cho thân khác cho tới khi hết hạn, nên giữ thời hạn vé ngắn.
+Node hiện không kiểm `X-LN-Body-Hash`, `X-LN-Nonce`, `X-LN-Ts`, `X-LN-PoP` ở đường này: chính sách triển khai hiện tắt phép kiểm này. Vé bị lộ có thể dùng lại cho thân khác cho tới khi hết hạn, nên giữ thời hạn vé ngắn.
 
-Lỗi là văn bản thuần, không có mã chữ: `401 Missing Authorization header` · `401 Expected `Bearer <token>` scheme` · `403 Invalid token`. Khi cổng bật, vé kiểm hỏng trả thân `"<mã>: <mô tả>"` với status theo lỗi; `503` khi cổng cấu hình sai hoặc không lấy được bộ khoá công khai.
+Lỗi là văn bản thuần, không có mã chữ: `401 Missing Authorization header` · `401 Expected `Bearer <token>` scheme` · `403 Invalid token`. Khi cổng bật, vé kiểm hỏng trả thân `"<mã>: <mô tả>"` với status theo lỗi; `503` khi cổng cấu hình sai, không lấy được bộ khoá công khai, hoặc không tra được trạng thái vé ở dịch vụ định danh (nếu node bật kiểm thu hồi): đây là lỗi tạm phía node, thử lại sau.
 
 ### 3.2 Chữ ký DID (khoá P-256)
 
@@ -195,14 +195,14 @@ Khoá thiết bị là khoá Ed25519 dẫn từ seed thiết bị (mục 5.2).
 - **`/v1/join/v2/request`**: chữ ký nằm trong `request_json` do `join_and_contribute` dựng; app gửi nguyên văn, không sửa.
 - **`/v1/join/status/:device_pubkey_hex`**: ba header `x-lampnet-join-status-pubkey`, `x-lampnet-join-status-ts`, `x-lampnet-join-status-sig`, dựng bằng `build_join_status_request`. Độ lệch giờ tối đa 300 giây. Hàm trả JSON `{device_pubkey_hex, ts, sig_hex}`, app tự chuyển sang header; `verifier_did` lấy từ `/v1/join/challenge` của đúng node đó. Thiếu hoặc sai → `401`; khoá ký khác khoá trên đường dẫn → `403`; đường dẫn sai định dạng → `400`.
 - **`/v1/mobile/*`**: chữ ký nằm trong thân do các hàm `build_*` dựng.
-- **`/v1/device/register`**: SDK không có hàm dựng; app tự ký bằng thư viện Ed25519, dùng thẳng seed 32 byte từ `generate_device_seed()` làm khoá RFC 8032.
+- **`/v1/device/register`**: SDK không có hàm dựng; app tự ký bằng thư viện Ed25519. Giải hex chuỗi từ `generate_device_seed()` thành 32 byte rồi dùng thẳng làm seed RFC 8032.
   - `domain` = `lampnet/device/register/v1`.
   - `hash` = BLAKE3 của `len(domain) ‖ domain ‖ len(did) ‖ did ‖ len(device_pubkey) ‖ device_pubkey ‖ len(ts) ‖ ts`, với `len` là độ dài u32 little-endian.
   - `did` là byte UTF-8 của DID đã chứng minh qua header. `device_pubkey` là 32 byte thô. `ts` là `timestamp` dạng i64 little-endian, 8 byte.
   - Ký Ed25519 thẳng lên 32 byte `hash`, không băm lại.
   - Thân: `device_pubkey` hex 32 byte, `signature` hex 64 byte, `timestamp` số nguyên, `did` tuỳ chọn; có giá trị thì phải khớp DID ở header, không thì `400 did_mismatch`.
 
-  Vector kiểm, seed chỉ dùng thử: seed = 32 byte `0x07`, `did` = `did:phoenix:example`, `timestamp` = `1700000000`.
+  Vector kiểm, seed chỉ dùng thử: seed = 32 byte `0x07`, `did` = `did:phoenix:example`, `timestamp` = `1700000000`. Vector chỉ để kiểm phép băm và phép ký; DID này không hợp lệ khi gửi lên node.
 
   ```
   device_pubkey = ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c
@@ -274,8 +274,8 @@ Hướng tích hợp là **client tự niêm** dữ liệu trước khi gửi, b
 | `moc_seal(k_obj, security_level, content_type?, doc_type?, payload)` | Niêm dữ liệu bằng khoá nội dung 32 byte. `security_level`: `0` = L0, `1` = L1, `2` = LMax |
 | `moc_open(...)` → `MocOpened{payload, security_level, content_type, doc_type}` | Mở dữ liệu đã niêm |
 | `moc_cid(...)` | Tính CID của bản niêm (xem lưu ý mục 4.3) |
-| `moc_seal_with_aad(key, aad, plaintext)` | Chỉ từ `d0cee4d`: niêm XChaCha20-Poly1305 với `aad` của bên gọi, trả `nonce(24) ‖ ct ‖ tag(16)`. `aad` không nằm trên dây |
-| `moc_open_with_aad(key, aad, sealed)` | Chỉ từ `d0cee4d`: mở bản niêm với đúng `aad` lúc niêm |
+| `moc_seal_with_aad(key, aad, plaintext)` | Niêm XChaCha20-Poly1305 với `aad` của bên gọi, trả `nonce(24) ‖ ct ‖ tag(16)`. `aad` không nằm trên dây |
+| `moc_open_with_aad(key, aad, sealed)` | Mở bản niêm với đúng `aad` lúc niêm |
 | `moc_generate_keypair()` → `KeypairRec{secret, public}` | Sinh cặp khoá X25519 |
 | `moc_wrap_key(k_obj, recipient_pub)` → `WrappedKeyRec{ephemeral_pub, nonce, ct}` | Bọc khoá nội dung cho người nhận |
 | `moc_unwrap_key(...)` | Mở khoá nội dung đã bọc |
@@ -290,7 +290,7 @@ Hướng tích hợp là **client tự niêm** dữ liệu trước khi gửi, b
 | `build_payload_fetch_request(...)` | Thân `/v1/mobile/payload/:lease_id` |
 | `execute_compute_lease(...)` | Chạy việc tính toán đã nhận |
 | `report_receipt(...)` | Thân `/v1/mobile/report` |
-| `build_storage_offer(offer: StorageOffer{device_pubkey, free_mb, requested_bytes, ts}, seed)` | Thân `/v1/mobile/storage/offer` |
+| `build_storage_offer(offer: StorageOffer{device_pubkey, free_mb, requested_bytes, ts}, seed_hex)` | Thân `/v1/mobile/storage/offer` |
 | `build_shard_fetch_request(...)` | Thân `/v1/mobile/storage/shard/:lease_id` |
 | `build_audit_challenge_request(...)` | Thân `/v1/mobile/storage/challenge/:lease_id` |
 | `answer_storage_audit(...)` | Thân `/v1/mobile/storage/proof` |
@@ -312,7 +312,7 @@ Hướng tích hợp là **client tự niêm** dữ liệu trước khi gửi, b
    - `bootstrap_did` = `verifier_did`; `challenge_nonce_hex` = `nonce_hex`; `seed_hex` = seed từ kho khoá.
    - `attestation_mode`: `"Hardware"` hoặc `"Software"`.
    - Các trường phần cứng và đo đạc: `hw_model`, `chip_id`, `cpu_cores`, `cpu_score`, `ram_mb`, `disk_gb`, `bandwidth_mbps`, `measured_flops`, `measured_bandwidth_mbps`, `measured_disk_iops`, `s_net`, `s_avail`, `s_energy`, `network_load`.
-   - Chỉ bản dựng từ `d0cee4d` trở đi: `gpus` (`List<GpuSpec>`) và `server_attest_ext` (lấy từ `attest_ext` của challenge). Hai trường không có giá trị mặc định nên phải truyền, kể cả khi rỗng. Bản `71701aa` không có hai trường này dù cùng version 1.0.0, nên ghim bản dựng theo commit.
+   - Bản dựng mới: `gpus` (`List<GpuSpec>`) và `server_attest_ext` (lấy từ `attest_ext` của challenge). Hai trường không có giá trị mặc định nên phải truyền, kể cả khi rỗng. Bản dựng cũ cùng version 1.0.0 không có hai trường này, nên đối chiếu với binding sinh ra từ đúng bản dựng đang dùng.
 4. `join_and_contribute(config)` → `JoinOutcome`.
 5. `POST /v1/join/v2/request` với thân là nguyên văn `JoinOutcome.request_json`.
 6. Kiểm lại trạng thái bằng `GET /v1/join/status/:device_pubkey_hex` (header từ `build_join_status_request`).
@@ -327,7 +327,7 @@ Hướng tích hợp là **client tự niêm** dữ liệu trước khi gửi, b
 | `device_pubkey_hex`, `fingerprint_hex` | Khoá công khai và vân tay thiết bị |
 | `plan` | `ContributionPlan` (dưới đây) |
 | `request_json` | Thân gửi lên `/v1/join/v2/request` |
-| `sent_gpus` | Chỉ từ `d0cee4d`: yêu cầu có gửi danh sách GPU hay không. `true` mà gặp `422 bad_attestation` thì dựng lại không GPU với nonce mới và thử đúng một lần; SDK không tự thử lại. `gpus` khác rỗng mà `sent_gpus = false` thì app ghi cảnh báo |
+| `sent_gpus` | Yêu cầu có gửi danh sách GPU hay không. `true` mà gặp `422 bad_attestation` thì dựng lại không GPU với nonce mới và thử đúng một lần; SDK không tự thử lại. `gpus` khác rỗng mà `sent_gpus = false` thì app ghi cảnh báo |
 
 Quyết định cuối cùng là phản hồi của `/v1/join/v2/request`, không phải `decision` phía máy.
 
